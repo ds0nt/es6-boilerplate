@@ -1,25 +1,49 @@
 import Layout from './layout'
 import eventbus from './event-master'
-import { Message, MessageHandler } from './socket-master'
+
+import notifications from './notifications'
+notifications.start()
+
+import { messageSwitch, Message, MessageHandler } from './socket-master'
 
 import ReactDOM from 'react-dom'
 import React from 'react'
 
+require('codemirror/mode/javascript/javascript')
+require('codemirror/mode/css/css')
+require('codemirror/mode/yaml/yaml')
 
-let addMessage = () => {}
+import codebox from 'codemirror'
+
+export let scriptbox = null
+class CodeBox extends React.Component {
+  constructor(props) {
+    super(props)
+  }
+  componentDidMount() {
+    scriptbox = codebox.fromTextArea(this.refs.code, {
+      mode: 'javascript',
+      theme: 'monokai',
+      inputStyle: "contenteditable",
+      lineNumbers: true,
+      tabsize: 2
+    })
+    this.setState({
+      codeBox: scriptbox
+    })
+  }
+  render() {
+    return (<textarea ref="code"></textarea>)
+  }
+
+}
 
 class ChatInput extends React.Component {
   onSubmit(e) {
     e.preventDefault()
     let val = this.refs.chatInput.value
     this.refs.chatInput.value = ""
-    if (val.startsWith('/nick')) {
-      new Nick(val).send()
-    } else if (val.startsWith('/tweet')) {
-      new Tweet(val).send()
-    } else {
-      new Chat(val).send()
-    }
+    messageSwitch(val)
   }
   render() {
     return (<form onSubmit={(e) => this.onSubmit(e)} ><input className="ui chat input" type="text" ref="chatInput"/></form>)
@@ -34,25 +58,26 @@ class Main extends React.Component {
       messages: [],
     }
 
-    this.chatEvent = eventbus.on('in:chat', (message) => {
-      let { messages } = this.state
-      messages.push(message)
-      this.setState({
-        messages: messages
-      })
-    })
+    this.chatEvent = eventbus.on('in:broadcast', (message) => this.message(message))
+    this.chatEvent2 = eventbus.on('in:chat', (message) => this.message(message))
+    this.chatEvent3 = eventbus.on('in:nick', (message) => this.message(message))
+    this.chatEvent4 = eventbus.on('log', (message) => this.message(message))
 
-    this.chatEvent2 = eventbus.on('in:nick', (message) => {
-      let { messages } = this.state
-      messages.push(message)
-      this.setState({
-        messages: messages
-      })
+  }
+
+  message(message) {
+    let { messages } = this.state
+    messages.push(message)
+    this.setState({
+      messages: messages
     })
   }
+
   componentWillUnmount() {
     this.chatEvent.off();
     this.chatEvent2.off();
+    this.chatEvent3.off();
+    this.chatEvent4.off();
   }
   render() {
     let { messages } = this.state
@@ -62,6 +87,7 @@ class Main extends React.Component {
         <div className="main-pane-inner">
           <div className="ui header item main-pane-item">{this.state.text}</div>
           {messages}
+          <CodeBox />
           <ChatInput />
         </div>
       </div>
@@ -112,81 +138,3 @@ ReactDOM.render(
   <Layout header={<HeaderPane />} left=<ChatPane /> right={<AppPane />} main={<Main/>}/>,
   document.getElementById('application')
 )
-
-
-
-class Ping extends Message {
-  constructor() {
-    super('ping')
-  }
-}
-
-class Chat extends Message {
-  constructor(message) {
-    super('chat')
-    this.payload = message
-  }
-}
-
-class Nick extends Message {
-  constructor(message) {
-    super('nick')
-    this.payload = message.slice(6)
-  }
-}
-
-class Tweet extends Message {
-  constructor(message) {
-    super('tweet')
-    this.payload = message.slice(7)
-  }
-}
-
-setInterval(function () {
-  let msg = new Ping()
-  msg.send()
-}, 10000);
-
-
-class DefaultMessageHandler extends MessageHandler {
-  constructor() {
-    super('default')
-  }
-  handle(data) {
-    console.log("Default Handler caught message:", data)
-  }
-}
-new DefaultMessageHandler();
-
-class PingMessageHandler extends MessageHandler {
-  constructor() {
-    super('ping')
-  }
-  handle(data) {
-    console.log("Received Message:", data)
-    eventbus.emit('in:ping', data)
-  }
-}
-new PingMessageHandler();
-
-class NickMessageHandler extends MessageHandler {
-  constructor() {
-    super('nick')
-  }
-  handle(data) {
-    console.log("Received Message:", data)
-    eventbus.emit('in:nick', data.payloadcd)
-  }
-}
-new NickMessageHandler();
-
-class ChatMessageHandler extends MessageHandler {
-  constructor() {
-    super('chat')
-  }
-  handle(data) {
-    console.log("Received Message:", data)
-    eventbus.emit('in:chat', data.payload)
-  }
-}
-new ChatMessageHandler();
